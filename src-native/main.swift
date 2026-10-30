@@ -68,8 +68,14 @@ class LocalAppSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
 
+class CustomWindow: NSWindow {
+    // Allows dragging the window anywhere on empty areas
+    override var canBecomeKey: Bool { return true }
+    override var canBecomeMain: Bool { return true }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate {
-    var window: NSWindow!
+    var window: CustomWindow!
     var webView: WKWebView!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -79,14 +85,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
            FileManager.default.fileExists(atPath: resURL.path) {
             webAssetsDir = resURL
         } else {
-            // Fallback for direct development running
             webAssetsDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dist")
         }
 
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(LocalAppSchemeHandler(resourcesURL: webAssetsDir), forURLScheme: "app")
-        
-        // Allow WebAudio and media capture
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
         let screenSize = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
@@ -100,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
             height: windowHeight
         )
 
-        window = NSWindow(
+        window = CustomWindow(
             contentRect: rect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -110,6 +113,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
         window.title = "AudioNodeRouter"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true  // ★ 背景ドラッグでウィンドウ全体を移動可能にする
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
 
@@ -121,7 +125,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)
 
-        // Load the embedded web app via custom scheme
         if let initialURL = URL(string: "app://local/index.html") {
             webView.load(URLRequest(url: initialURL))
         }

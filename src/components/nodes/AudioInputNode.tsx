@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Mic, Radio, MonitorSpeaker } from 'lucide-react';
+import { Mic, Radio } from 'lucide-react';
 import { AudioNodeData } from '../../types/audio';
 import { VUMeter } from '../controls/VUMeter';
 import { FaderSlider } from '../controls/FaderSlider';
@@ -10,7 +10,6 @@ interface AudioInputNodeProps {
   data: AudioNodeData;
 }
 
-// All detected input devices on this Mac
 const INPUT_DEVICE_OPTIONS = [
   { label: 'MacBook Pro マイク (内蔵)', value: 'builtin-mic', icon: '🎙️' },
   { label: 'ゆゆうたのマイク (Apple)', value: 'yuyuta-mic', icon: '🎙️' },
@@ -34,7 +33,6 @@ export const AudioInputNode: React.FC<AudioInputNodeProps> = ({ data }) => {
 
   const selectedDevice = data.virtualChannel || INPUT_DEVICE_OPTIONS[0].value;
   const isTestMode = selectedDevice === 'oscillator';
-  const isMicNode = data.subType === 'mic';
 
   return (
     <div className="w-72 bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl overflow-hidden hover:border-blue-500/80 transition-all duration-200">
@@ -52,14 +50,14 @@ export const AudioInputNode: React.FC<AudioInputNodeProps> = ({ data }) => {
       </div>
 
       {/* Node Body */}
-      <div className="p-3.5 space-y-3">
+      <div className="p-3.5 space-y-3 nodrag">
         {/* Device Selector */}
         <div className="space-y-1">
           <div className="text-[10px] text-zinc-400 font-mono">🔌 INPUT DEVICE / SOURCE:</div>
           <select
             value={selectedDevice}
             onChange={(e) => updateNodeChannel(data.id, e.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-750 text-[10px] text-zinc-200 rounded px-1.5 py-1.5 focus:outline-none focus:border-blue-500"
+            className="nodrag nopan w-full bg-zinc-950 border border-zinc-750 text-[10px] text-zinc-200 rounded px-1.5 py-1.5 focus:outline-none focus:border-blue-500"
           >
             {INPUT_DEVICE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -73,7 +71,7 @@ export const AudioInputNode: React.FC<AudioInputNodeProps> = ({ data }) => {
         {isTestMode ? (
           <button
             onClick={toggleTestTone}
-            className={`w-full py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all ${
+            className={`nodrag nopan w-full py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all ${
               isTestToneActive
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30'
                 : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
@@ -85,7 +83,7 @@ export const AudioInputNode: React.FC<AudioInputNodeProps> = ({ data }) => {
         ) : (
           <button
             onClick={toggleMic}
-            className={`w-full py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all ${
+            className={`nodrag nopan w-full py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all ${
               isMicActive
                 ? 'bg-rose-600/90 hover:bg-rose-600 text-white shadow-lg shadow-rose-900/30'
                 : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
@@ -97,7 +95,7 @@ export const AudioInputNode: React.FC<AudioInputNodeProps> = ({ data }) => {
         )}
 
         {/* Meters and Volume Strip */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 pt-1">
           <VUMeter peakL={data.peakL} peakR={data.peakR} height={60} />
           <div className="flex-1 space-y-2">
             <FaderSlider
@@ -105,10 +103,10 @@ export const AudioInputNode: React.FC<AudioInputNodeProps> = ({ data }) => {
               disabled={data.mute}
               onChange={(val) => updateGain(data.id, val)}
             />
-            <div className="flex gap-1.5 pt-1">
+            <div className="flex gap-1.5 pt-1 nodrag">
               <button
                 onClick={() => toggleMute(data.id)}
-                className={`flex-1 py-1 rounded text-[10px] font-bold tracking-wider uppercase transition-all ${
+                className={`nodrag nopan flex-1 py-1 rounded text-[10px] font-bold tracking-wider uppercase transition-all ${
                   data.mute
                     ? 'bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)]'
                     : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
@@ -126,7 +124,7 @@ export const AudioInputNode: React.FC<AudioInputNodeProps> = ({ data }) => {
         type="source"
         position={Position.Right}
         id="out"
-        className="!w-3.5 !h-3.5 !bg-emerald-400 !border-2 !border-zinc-950 hover:!bg-emerald-300"
+        className="!w-4 !h-4 !bg-emerald-400 !border-2 !border-zinc-950 hover:!bg-emerald-300"
       />
     </div>
   );

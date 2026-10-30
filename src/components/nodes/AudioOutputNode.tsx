@@ -32,13 +32,15 @@ export const AudioOutputNode: React.FC<AudioOutputNodeProps> = ({ data }) => {
 
   return (
     <div className="w-72 bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl overflow-hidden hover:border-amber-500/80 transition-all duration-200">
+      {/* Input Pin (Left) */}
       <Handle
         type="target"
         position={Position.Left}
         id="in"
-        className="!w-3.5 !h-3.5 !bg-blue-400 !border-2 !border-zinc-950 hover:!bg-blue-300"
+        className="!w-4 !h-4 !bg-blue-400 !border-2 !border-zinc-950 hover:!bg-blue-300"
       />
 
+      {/* Node Header */}
       <div className="bg-gradient-to-r from-amber-950/60 to-zinc-900 px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isBlackHole ? (
@@ -55,13 +57,15 @@ export const AudioOutputNode: React.FC<AudioOutputNodeProps> = ({ data }) => {
         </span>
       </div>
 
-      <div className="p-3 space-y-2.5">
+      {/* Node Body */}
+      <div className="p-3 space-y-2.5 nodrag">
+        {/* Device Selector */}
         <div className="space-y-1">
           <div className="text-[10px] text-zinc-400 font-mono">🔌 OUTPUT DEVICE / DESTINATION:</div>
           <select
             value={selectedDevice}
             onChange={(e) => updateNodeChannel(data.id, e.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-750 text-[10px] text-zinc-200 rounded px-1.5 py-1.5 focus:outline-none focus:border-amber-500"
+            className="nodrag nopan w-full bg-zinc-950 border border-zinc-750 text-[10px] text-zinc-200 rounded px-1.5 py-1.5 focus:outline-none focus:border-amber-500"
           >
             {OUTPUT_DEVICE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -71,7 +75,7 @@ export const AudioOutputNode: React.FC<AudioOutputNodeProps> = ({ data }) => {
           </select>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 pt-1">
           <VUMeter peakL={data.peakL} peakR={data.peakR} height={60} />
           <div className="flex-1 space-y-2">
             <FaderSlider
@@ -79,16 +83,18 @@ export const AudioOutputNode: React.FC<AudioOutputNodeProps> = ({ data }) => {
               disabled={data.mute}
               onChange={(val) => updateGain(data.id, val)}
             />
-            <button
-              onClick={() => toggleMute(data.id)}
-              className={`w-full py-1 rounded text-[10px] font-bold tracking-wider uppercase transition-all ${
-                data.mute
-                  ? 'bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)]'
-                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
-              }`}
-            >
-              MUTE
-            </button>
+            <div className="flex gap-1.5 pt-0.5 nodrag">
+              <button
+                onClick={() => toggleMute(data.id)}
+                className={`nodrag nopan w-full py-1 rounded text-[10px] font-bold tracking-wider uppercase transition-all ${
+                  data.mute
+                    ? 'bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)]'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
+                }`}
+              >
+                MUTE
+              </button>
+            </div>
           </div>
         </div>
       </div>
