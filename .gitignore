@@ -23,5 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Tauri build artifacts
+# Built binaries & apps
+*.app
+AudioNodeRouter
+AudioNodeRouterBin
 src-tauri/target
