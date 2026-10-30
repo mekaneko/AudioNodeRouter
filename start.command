@@ -1,5 +1,17 @@
 #!/bin/bash
 cd "$(dirname "$0")"
-echo "=== AudioNodeRouter を起動しています... ==="
-echo "ブラウザで http://localhost:5173 を開きます"
+
+echo "=========================================================="
+echo "      AudioNodeRouter (ノードベース・オーディオミキサー)      "
+echo "=========================================================="
+echo ""
+echo "🚀 開発サーバーを起動しています..."
+echo "🌐 まもなくブラウザで http://localhost:5173 が自動で開きます。"
+echo "💡 終了したいときは、このウィンドウで [Control + C] を押してください。"
+echo ""
+
+# 1.5秒後に自動でブラウザを開く
+(sleep 1.5 && open "http://localhost:5173") &
+
+# Vite サーバーを起動
 npm run dev
