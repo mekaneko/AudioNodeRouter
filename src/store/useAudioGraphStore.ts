@@ -29,6 +29,7 @@ interface AudioGraphState {
   toggleMic: () => Promise<void>;
   toggleTestTone: () => void;
   updateNodeGain: (id: string, gain: number) => void;
+  updateNodeChannel: (id: string, channel: string) => void;
   toggleNodeMute: (id: string) => void;
   toggleNodeSolo: (id: string) => void;
   addBusNode: (busNumber?: number) => void;
@@ -256,6 +257,17 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
             const updated = { ...node, data: { ...node.data, gain } };
             engine.setGain(id, gain, updated.data.mute, updated.data.solo);
             return updated;
+          }
+          return node;
+        }),
+      });
+    },
+
+    updateNodeChannel: (id: string, virtualChannel: string) => {
+      set({
+        nodes: get().nodes.map((node) => {
+          if (node.id === id) {
+            return { ...node, data: { ...node.data, virtualChannel } };
           }
           return node;
         }),
