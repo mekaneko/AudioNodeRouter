@@ -11,24 +11,21 @@ import {
   Connection,
 } from '@xyflow/react';
 import { AudioNodeData, AudioNodeType } from '../types/audio';
-import { AudioEngine } from '../audio/AudioEngine';
-import { ALL_BYPASS_LINES } from '../audio/BlackHoleChannels';
+import { NativeBridge, AudioDeviceItem, MeterUpdate } from '../audio/NativeBridge';
 
 interface AudioGraphState {
   nodes: Node<AudioNodeData>[];
   edges: Edge[];
-  isEngineStarted: boolean;
-  isMicActive: boolean;
-  isTestToneActive: boolean;
+  availableInputs: AudioDeviceItem[];
+  availableOutputs: AudioDeviceItem[];
 
   // Actions
+  initNativeBridge: () => void;
   onNodesChange: OnNodesChange<Node<AudioNodeData>>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
 
-  startEngine: () => Promise<void>;
-  toggleMic: () => Promise<void>;
-  toggleTestTone: () => void;
+  updateNodeDevice: (id: string, deviceId: number) => void;
   updateNodeGain: (id: string, gain: number) => void;
   updateNodeChannel: (id: string, virtualChannel: string) => void;
   toggleNodeMute: (id: string) => void;
@@ -38,26 +35,31 @@ interface AudioGraphState {
     type: AudioNodeType,
     position: { x: number; y: number },
     presetName?: string,
-    subType?: string
+    subType?: string,
+    defaultDeviceId?: number
   ) => void;
-  updateMeters: () => void;
   loadDefaultLayout: () => void;
 }
 
-// Initial Nodes Setup
-const createInitialNodes = (): Node<AudioNodeData>[] => {
+const createInitialNodes = (inDevs: AudioDeviceItem[], outDevs: AudioDeviceItem[]): Node<AudioNodeData>[] => {
+  // Find BlackHole and default devices if present
+  const defaultIn = inDevs.find((d) => d.id !== 0 && !d.name.includes('BlackHole')) || inDevs[1] || { id: 0, name: '未選択' };
+  const blackholeIn = inDevs.find((d) => d.name.includes('BlackHole 16ch') || d.name.includes('BlackHole 2ch')) || { id: 0, name: 'BlackHole' };
+  const defaultOut = outDevs.find((d) => d.id !== 0 && !d.name.includes('BlackHole')) || outDevs[1] || { id: 0, name: '未選択' };
+  const blackholeOut = outDevs.find((d) => d.name.includes('BlackHole 16ch') || d.name.includes('BlackHole 2ch')) || { id: 0, name: 'BlackHole' };
+
   const nodes: Node<AudioNodeData>[] = [
-    // 1. Microphone Input Node
+    // 1. Microphone Input (Input 1)
     {
-      id: 'input-mic',
+      id: 'input-1',
       type: 'audioInput',
       position: { x: 50, y: 120 },
       data: {
-        id: 'input-mic',
-        name: 'Mic (CoreAudio)',
+        id: 'input-1',
+        name: '入力 1 (マイク)',
         type: 'input',
         subType: 'mic',
-        virtualChannel: 'builtin-mic',
+        deviceId: defaultIn.id,
         gain: 1.0,
         mute: false,
         solo: false,
@@ -66,17 +68,17 @@ const createInitialNodes = (): Node<AudioNodeData>[] => {
         peakR: 0,
       },
     },
-    // 2. System / App Audio Input Node
+    // 2. BlackHole In (Input 2)
     {
-      id: 'input-app',
+      id: 'input-2',
       type: 'audioInput',
       position: { x: 50, y: 380 },
       data: {
-        id: 'input-app',
-        name: 'App Audio (BlackHole In)',
+        id: 'input-2',
+        name: '入力 2 (PC音声/BlackHole)',
         type: 'input',
         subType: 'blackhole-in',
-        virtualChannel: 'bh16ch-in',
+        deviceId: blackholeIn.id,
         gain: 1.0,
         mute: false,
         solo: false,
@@ -87,34 +89,19 @@ const createInitialNodes = (): Node<AudioNodeData>[] => {
     },
   ];
 
-  // 3. 10 Independent Virtual Buses mapped to real BlackHole + Internal
-  const busPresets = [
-    { num: 1, name: 'Bus 1: 通話 (Discord/Zoom)', channel: 'BlackHole 16ch: Ch 1-2 (Discord/通話)' },
-    { num: 2, name: 'Bus 2: ゲーム音 (Steam/App)', channel: 'BlackHole 16ch: Ch 3-4 (Game/ゲーム音)' },
-    { num: 3, name: 'Bus 3: BGM (Spotify/Music)', channel: 'BlackHole 16ch: Ch 5-6 (Music/BGM)' },
-    { num: 4, name: 'Bus 4: 効果音 (Soundpad/SE)', channel: 'BlackHole 16ch: Ch 7-8 (SFX/効果音)' },
-    { num: 5, name: 'Bus 5: クリーンマイク (生声)', channel: 'BlackHole 16ch: Ch 9-10 (Mic Clean/生声)' },
-    { num: 6, name: 'Bus 6: エフェクトマイク (ボイチェン)', channel: 'BlackHole 16ch: Ch 11-12 (Mic FX/ボイチェン)' },
-    { num: 7, name: 'Bus 7: 配信モニター (OBS)', channel: 'BlackHole 16ch: Ch 13-14 (OBS Monitor/配信)' },
-    { num: 8, name: 'Bus 8: システム音 (macOS通知)', channel: 'BlackHole 16ch: Ch 15-16 (System/通知音)' },
-    { num: 9, name: 'Bus 9: メインバイパス (2ch)', channel: 'BlackHole 2ch: Ch 1-2 (メイン)' },
-    { num: 10, name: 'Bus 10: 内部サブミックス', channel: '内部バス A (Internal)' },
-  ];
-
-  for (let i = 0; i < 10; i++) {
-    const p = busPresets[i];
-    const col = i < 5 ? 0 : 1;
-    const row = i % 5;
+  // 3. Virtual Bypass Lines (Bus 1 ~ 8)
+  for (let i = 1; i <= 6; i++) {
+    const col = i <= 3 ? 0 : 1;
+    const row = (i - 1) % 3;
     nodes.push({
-      id: `bus-${p.num}`,
+      id: `bus-${i}`,
       type: 'audioBus',
-      position: { x: 400 + col * 310, y: 60 + row * 210 },
+      position: { x: 420 + col * 320, y: 100 + row * 220 },
       data: {
-        id: `bus-${p.num}`,
-        name: p.name,
+        id: `bus-${i}`,
+        name: `バイパスライン ${i} (Bus ${i})`,
         type: 'bus',
-        busNumber: p.num,
-        virtualChannel: p.channel,
+        busNumber: i,
         gain: 1.0,
         mute: false,
         solo: false,
@@ -125,17 +112,17 @@ const createInitialNodes = (): Node<AudioNodeData>[] => {
     });
   }
 
-  // 4. Output Nodes
+  // 4. Output Nodes (Output 1: Main Speaker, Output 2: Stream OBS)
   nodes.push({
-    id: 'out-monitor',
+    id: 'out-1',
     type: 'audioOutput',
-    position: { x: 1060, y: 150 },
+    position: { x: 1100, y: 120 },
     data: {
-      id: 'out-monitor',
-      name: 'Monitor (Speaker/Headphone)',
+      id: 'out-1',
+      name: '出力 1 (スピーカー/モニター)',
       type: 'output',
       subType: 'speaker',
-      virtualChannel: 'builtin-speaker',
+      deviceId: defaultOut.id,
       gain: 1.0,
       mute: false,
       solo: false,
@@ -146,15 +133,15 @@ const createInitialNodes = (): Node<AudioNodeData>[] => {
   });
 
   nodes.push({
-    id: 'out-stream',
+    id: 'out-2',
     type: 'audioOutput',
-    position: { x: 1060, y: 440 },
+    position: { x: 1100, y: 380 },
     data: {
-      id: 'out-stream',
-      name: 'OBS Stream (BlackHole Out)',
+      id: 'out-2',
+      name: '出力 2 (OBS配信/録音用)',
       type: 'output',
       subType: 'blackhole-out',
-      virtualChannel: 'bh16ch-out',
+      deviceId: blackholeOut.id,
       gain: 1.0,
       mute: false,
       solo: false,
@@ -167,25 +154,80 @@ const createInitialNodes = (): Node<AudioNodeData>[] => {
   return nodes;
 };
 
-// Initial routing wire connections
 const initialEdges: Edge[] = [
-  { id: 'e-mic-bus5', source: 'input-mic', target: 'bus-5', animated: true },
-  { id: 'e-app-bus2', source: 'input-app', target: 'bus-2', animated: true },
-  { id: 'e-bus5-out1', source: 'bus-5', target: 'out-monitor' },
-  { id: 'e-bus2-out1', source: 'bus-2', target: 'out-monitor' },
-  { id: 'e-bus5-out2', source: 'bus-5', target: 'out-stream' },
-  { id: 'e-bus2-out2', source: 'bus-2', target: 'out-stream' },
+  { id: 'e-in1-bus1', source: 'input-1', target: 'bus-1', animated: true },
+  { id: 'e-in2-bus2', source: 'input-2', target: 'bus-2', animated: true },
+  { id: 'e-bus1-out1', source: 'bus-1', target: 'out-1' },
+  { id: 'e-bus2-out1', source: 'bus-2', target: 'out-1' },
+  { id: 'e-bus1-out2', source: 'bus-1', target: 'out-2' },
+  { id: 'e-bus2-out2', source: 'bus-2', target: 'out-2' },
 ];
 
 export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
-  const engine = AudioEngine.getInstance();
-
   return {
-    nodes: createInitialNodes(),
+    nodes: createInitialNodes([], []),
     edges: initialEdges,
-    isEngineStarted: false,
-    isMicActive: false,
-    isTestToneActive: false,
+    availableInputs: [],
+    availableOutputs: [],
+
+    initNativeBridge: () => {
+      // 1. Subscribe to Core Audio devices from Swift
+      NativeBridge.subscribeDevices((inputs, outputs) => {
+        set({ availableInputs: inputs, availableOutputs: outputs });
+
+        // Update default device IDs on nodes if not set
+        const currentNodes = get().nodes;
+        const defaultIn = inputs.find((d) => d.id !== 0 && !d.name.includes('BlackHole'))?.id || inputs[1]?.id || 0;
+        const defaultOut = outputs.find((d) => d.id !== 0 && !d.name.includes('BlackHole'))?.id || outputs[1]?.id || 0;
+
+        const updatedNodes = currentNodes.map((n) => {
+          if (n.data.type === 'input' && (!n.data.deviceId || n.data.deviceId === 0)) {
+            const devId = n.id.includes('2')
+              ? inputs.find((d) => d.name.includes('BlackHole'))?.id || defaultIn
+              : defaultIn;
+            NativeBridge.updateInputNode(n.id, devId, n.data.gain, n.data.mute);
+            return { ...n, data: { ...n.data, deviceId: devId } };
+          }
+          if (n.data.type === 'output' && (!n.data.deviceId || n.data.deviceId === 0)) {
+            const devId = n.id.includes('2')
+              ? outputs.find((d) => d.name.includes('BlackHole'))?.id || defaultOut
+              : defaultOut;
+            NativeBridge.updateOutputNode(n.id, devId, n.data.gain, n.data.mute);
+            return { ...n, data: { ...n.data, deviceId: devId } };
+          }
+          if (n.data.type === 'bus') {
+            NativeBridge.updateBusNode(n.id, n.data.gain, n.data.mute);
+          }
+          return n;
+        });
+
+        set({ nodes: updatedNodes });
+
+        // Connect initial edges in Swift CoreAudio engine
+        get().edges.forEach((e) => {
+          NativeBridge.connect(e.source, e.target);
+        });
+      });
+
+      // 2. Subscribe to 30fps Real-time VU Meters from Swift AUHAL
+      NativeBridge.subscribeMeters((meters: MeterUpdate[]) => {
+        const meterMap = new Map<string, { l: number; r: number }>();
+        meters.forEach((m) => meterMap.set(m.id, { l: m.peakL, r: m.peakR }));
+
+        set({
+          nodes: get().nodes.map((node) => {
+            const m = meterMap.get(node.id);
+            if (m) {
+              return {
+                ...node,
+                data: { ...node.data, peakL: m.l, peakR: m.r },
+              };
+            }
+            return node;
+          }),
+        });
+      });
+    },
 
     onNodesChange: (changes) => {
       set({
@@ -201,7 +243,8 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
         if (change.type === 'remove') {
           const removedEdge = currentEdges.find((e) => e.id === change.id);
           if (removedEdge) {
-            engine.disconnect(removedEdge.source, removedEdge.target);
+            // Disconnect in native AUHAL engine immediately!
+            NativeBridge.disconnect(removedEdge.source, removedEdge.target);
           }
         }
       });
@@ -209,60 +252,34 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
       set({ edges: updatedEdges });
     },
 
-    // ★ 繋いだら実行ボタンなしで即座に自動同通！
+    // 結線した瞬間に即座にSwift CoreAudioエンジン側で直結！
     onConnect: (connection: Connection) => {
       if (!connection.source || !connection.target) return;
       const edge = { ...connection, id: `e-${connection.source}-${connection.target}-${Date.now()}`, animated: true };
 
-      // エンジンが未起動なら即時自動起動して同通
-      if (!get().isEngineStarted) {
-        get().startEngine();
-      }
-
-      // Wire audio in engine immediately
-      engine.connect(connection.source, connection.target);
+      // Swift AUHAL engine direct routing
+      NativeBridge.connect(connection.source, connection.target);
 
       set({
         edges: addEdge(edge, get().edges),
       });
     },
 
-    startEngine: async () => {
-      await engine.initContext();
-
-      const nodes = get().nodes;
-      nodes.forEach((n) => {
-        engine.registerNode(n.id);
-        if (n.data.type === 'output') {
-          engine.connectToMasterOutput(n.id);
-        }
+    updateNodeDevice: (id: string, deviceId: number) => {
+      set({
+        nodes: get().nodes.map((node) => {
+          if (node.id === id) {
+            const updated = { ...node, data: { ...node.data, deviceId } };
+            if (node.data.type === 'input') {
+              NativeBridge.updateInputNode(id, deviceId, updated.data.gain, updated.data.mute);
+            } else if (node.data.type === 'output') {
+              NativeBridge.updateOutputNode(id, deviceId, updated.data.gain, updated.data.mute);
+            }
+            return updated;
+          }
+          return node;
+        }),
       });
-
-      const edges = get().edges;
-      edges.forEach((e) => {
-        engine.connect(e.source, e.target);
-      });
-
-      set({ isEngineStarted: true });
-    },
-
-    toggleMic: async () => {
-      const isMicActive = get().isMicActive;
-      if (!isMicActive) {
-        await get().startEngine();
-        const success = await engine.enableMicrophone('input-mic');
-        if (success) {
-          set({ isMicActive: true });
-        }
-      } else {
-        set({ isMicActive: false });
-      }
-    },
-
-    toggleTestTone: () => {
-      get().startEngine();
-      const active = engine.toggleTestTone('input-app', 440);
-      set({ isTestToneActive: active });
     },
 
     updateNodeGain: (id: string, gain: number) => {
@@ -270,7 +287,13 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
         nodes: get().nodes.map((node) => {
           if (node.id === id) {
             const updated = { ...node, data: { ...node.data, gain } };
-            engine.setGain(id, gain, updated.data.mute, updated.data.solo);
+            if (node.data.type === 'input') {
+              NativeBridge.updateInputNode(id, node.data.deviceId || 0, gain, updated.data.mute);
+            } else if (node.data.type === 'output') {
+              NativeBridge.updateOutputNode(id, node.data.deviceId || 0, gain, updated.data.mute);
+            } else if (node.data.type === 'bus') {
+              NativeBridge.updateBusNode(id, gain, updated.data.mute);
+            }
             return updated;
           }
           return node;
@@ -295,7 +318,13 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
           if (node.id === id) {
             const newMute = !node.data.mute;
             const updated = { ...node, data: { ...node.data, mute: newMute } };
-            engine.setGain(id, updated.data.gain, newMute, updated.data.solo);
+            if (node.data.type === 'input') {
+              NativeBridge.updateInputNode(id, node.data.deviceId || 0, node.data.gain, newMute);
+            } else if (node.data.type === 'output') {
+              NativeBridge.updateOutputNode(id, node.data.deviceId || 0, node.data.gain, newMute);
+            } else if (node.data.type === 'bus') {
+              NativeBridge.updateBusNode(id, node.data.gain, newMute);
+            }
             return updated;
           }
           return node;
@@ -307,10 +336,7 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
       set({
         nodes: get().nodes.map((node) => {
           if (node.id === id) {
-            const newSolo = !node.data.solo;
-            const updated = { ...node, data: { ...node.data, solo: newSolo } };
-            engine.setGain(id, updated.data.gain, updated.data.mute, newSolo);
-            return updated;
+            return { ...node, data: { ...node.data, solo: !node.data.solo } };
           }
           return node;
         }),
@@ -322,20 +348,15 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
       const nextNum = customBusNum || (currentBuses.length + 1);
       const newId = `bus-${Date.now()}`;
 
-      // Automatically assign remaining BlackHole channel if available
-      const assignedLine =
-        nextNum <= ALL_BYPASS_LINES.length ? ALL_BYPASS_LINES[nextNum - 1].label : '内部バス A (Internal)';
-
       const newNode: Node<AudioNodeData> = {
         id: newId,
         type: 'audioBus',
         position: { x: 500 + Math.random() * 80, y: 150 + Math.random() * 200 },
         data: {
           id: newId,
-          name: `Bus ${nextNum}: カスタムバス`,
+          name: `バイパスライン ${nextNum} (Bus ${nextNum})`,
           type: 'bus',
           busNumber: nextNum,
-          virtualChannel: assignedLine,
           gain: 1.0,
           mute: false,
           solo: false,
@@ -345,31 +366,37 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
         },
       };
 
-      engine.registerNode(newId);
+      NativeBridge.updateBusNode(newId, 1.0, false);
       set({ nodes: [...get().nodes, newNode] });
     },
 
-    // ★ 右クリックした場所に指定ノードを追加するアクション
     addNodeAtPosition: (
       type: AudioNodeType,
       position: { x: number; y: number },
       presetName?: string,
-      subType?: string
+      subType?: string,
+      defaultDeviceId?: number
     ) => {
       const newId = `${type}-${Date.now()}`;
       let name = presetName || `${type.toUpperCase()} Node`;
-      let virtualChannel = '';
+      let deviceId = defaultDeviceId || 0;
 
-      if (type === 'bus') {
-        const count = get().nodes.filter((n) => n.data.type === 'bus').length + 1;
-        name = presetName || `Bus ${count}: 仮想ライン`;
-        virtualChannel = count <= 8 ? `BlackHole 16ch: Ch ${count * 2 - 1}-${count * 2}` : '内部バス A (Internal)';
-      } else if (type === 'input') {
-        name = presetName || 'Input Source';
-        virtualChannel = subType === 'mic' ? 'builtin-mic' : 'bh16ch-in';
+      if (type === 'input') {
+        const inDevs = get().availableInputs;
+        if (!deviceId && inDevs.length > 1) {
+          deviceId = inDevs[1].id;
+        }
+        NativeBridge.updateInputNode(newId, deviceId, 1.0, false);
       } else if (type === 'output') {
-        name = presetName || 'Output Destination';
-        virtualChannel = subType === 'speaker' ? 'builtin-speaker' : 'bh16ch-out';
+        const outDevs = get().availableOutputs;
+        if (!deviceId && outDevs.length > 1) {
+          deviceId = outDevs[1].id;
+        }
+        NativeBridge.updateOutputNode(newId, deviceId, 1.0, false);
+      } else if (type === 'bus') {
+        const count = get().nodes.filter((n) => n.data.type === 'bus').length + 1;
+        name = presetName || `バイパスライン ${count} (Bus ${count})`;
+        NativeBridge.updateBusNode(newId, 1.0, false);
       }
 
       const newNode: Node<AudioNodeData> = {
@@ -382,7 +409,7 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
           type,
           subType: subType as any,
           busNumber: type === 'bus' ? get().nodes.filter((n) => n.data.type === 'bus').length + 1 : undefined,
-          virtualChannel,
+          deviceId,
           gain: 1.0,
           mute: false,
           solo: false,
@@ -392,41 +419,17 @@ export const useAudioGraphStore = create<AudioGraphState>((set, get) => {
         },
       };
 
-      engine.registerNode(newId);
-      if (type === 'output') {
-        engine.connectToMasterOutput(newId);
-      }
-
       set({ nodes: [...get().nodes, newNode] });
     },
 
-    updateMeters: () => {
-      const nodes = get().nodes;
-      let hasChanges = false;
-      const updatedNodes = nodes.map((node) => {
-        const { peakL, peakR } = engine.getMeterLevels(node.id);
-        if (Math.abs(node.data.peakL - peakL) > 0.01 || Math.abs(node.data.peakR - peakR) > 0.01) {
-          hasChanges = true;
-          return {
-            ...node,
-            data: { ...node.data, peakL, peakR },
-          };
-        }
-        return node;
-      });
-
-      if (hasChanges) {
-        set({ nodes: updatedNodes });
-      }
-    },
-
     loadDefaultLayout: () => {
+      const inDevs = get().availableInputs;
+      const outDevs = get().availableOutputs;
       set({
-        nodes: createInitialNodes(),
+        nodes: createInitialNodes(inDevs, outDevs),
         edges: initialEdges,
       });
-      // Re-register in engine
-      get().startEngine();
+      get().initNativeBridge();
     },
   };
 });

@@ -1,5 +1,6 @@
 import Cocoa
 import WebKit
+import CoreAudio
 
 class LocalAppSchemeHandler: NSObject, WKURLSchemeHandler {
     let resourcesURL: URL
@@ -71,6 +72,7 @@ class LocalAppSchemeHandler: NSObject, WKURLSchemeHandler {
 class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     var window: NSWindow!
     var webView: WKWebView!
+    var meterTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let appBundle = Bundle.main
@@ -84,6 +86,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
 
         let contentController = WKUserContentController()
         contentController.add(self, name: "windowDrag")
+        contentController.add(self, name: "nativeAudio")
 
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
@@ -101,7 +104,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
             height: windowHeight
         )
 
-        // ★ 標準のタイトルバーを確実に持たせることで、上部をドラッグして確実にウィンドウを移動できるようにする
+        // Native titlebar for seamless window movement
         window = NSWindow(
             contentRect: rect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -109,7 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
             defer: false
         )
 
-        window.title = "AudioNodeRouter - macOS Audio Node Mixer"
+        window.title = "AudioNodeRouter - macOS Audio Node Mixer (LadioCast Engine)"
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.center()
@@ -128,14 +131,98 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
         }
 
         NSApp.activate(ignoringOtherApps: true)
+
+        // Start high-frequency meter sync to webview (30fps)
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
+            self?.syncMetersToWeb()
+        }
     }
 
-    // ドラッグメッセージを受け取ってウィンドウ移動を開始する
+    private func syncMetersToWeb() {
+        let json = NativeAudioRouter.shared.getMetersJSON()
+        webView.evaluateJavaScript("window.__onNativeMeters && window.__onNativeMeters(\(json));", completionHandler: nil)
+    }
+
+    // Handle messages from Web UI
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "windowDrag" {
             if let currentEvent = NSApp.currentEvent {
                 window.performDrag(with: currentEvent)
             }
+        } else if message.name == "nativeAudio" {
+            guard let dict = message.body as? [String: Any],
+                  let action = dict["action"] as? String else { return }
+
+            switch action {
+            case "getDevices":
+                sendDevicesToWeb()
+
+            case "updateInput":
+                if let id = dict["id"] as? String,
+                   let devId = dict["deviceId"] as? UInt32,
+                   let vol = dict["volume"] as? Double,
+                   let mute = dict["mute"] as? Bool {
+                    NativeAudioRouter.shared.setInputNode(id: id, deviceID: AudioDeviceID(devId), volume: Float(vol), mute: mute)
+                }
+
+            case "updateOutput":
+                if let id = dict["id"] as? String,
+                   let devId = dict["deviceId"] as? UInt32,
+                   let vol = dict["volume"] as? Double,
+                   let mute = dict["mute"] as? Bool {
+                    NativeAudioRouter.shared.setOutputNode(id: id, deviceID: AudioDeviceID(devId), volume: Float(vol), mute: mute)
+                }
+
+            case "updateBus":
+                if let id = dict["id"] as? String,
+                   let vol = dict["volume"] as? Double,
+                   let mute = dict["mute"] as? Bool {
+                    NativeAudioRouter.shared.setBusNode(id: id, volume: Float(vol), mute: mute)
+                }
+
+            case "connect":
+                if let src = dict["sourceId"] as? String,
+                   let tgt = dict["targetId"] as? String {
+                    NativeAudioRouter.shared.connect(sourceId: src, targetId: tgt)
+                }
+
+            case "disconnect":
+                if let src = dict["sourceId"] as? String,
+                   let tgt = dict["targetId"] as? String {
+                    NativeAudioRouter.shared.disconnect(sourceId: src, targetId: tgt)
+                }
+
+            case "removeNode":
+                if let id = dict["id"] as? String {
+                    NativeAudioRouter.shared.removeInputNode(id: id)
+                    NativeAudioRouter.shared.removeOutputNode(id: id)
+                    NativeAudioRouter.shared.removeBusNode(id: id)
+                }
+
+            default:
+                break
+            }
+        }
+    }
+
+    private func sendDevicesToWeb() {
+        let devMgr = AudioDeviceManager.shared
+        devMgr.refreshDevices()
+
+        var inList: [[String: Any]] = []
+        for d in devMgr.inputDevices {
+            inList.append(["id": d.id, "name": d.name, "uid": d.uid])
+        }
+
+        var outList: [[String: Any]] = []
+        for d in devMgr.outputDevices {
+            outList.append(["id": d.id, "name": d.name, "uid": d.uid])
+        }
+
+        let payload: [String: Any] = ["inputs": inList, "outputs": outList]
+        if let data = try? JSONSerialization.data(withJSONObject: payload),
+           let jsonStr = String(data: data, encoding: .utf8) {
+            webView.evaluateJavaScript("window.__onDevicesList && window.__onDevicesList(\(jsonStr));", completionHandler: nil)
         }
     }
 

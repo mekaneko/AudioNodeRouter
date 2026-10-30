@@ -1,27 +1,27 @@
 import React, { useEffect, useRef } from 'react';
 import {
   Mic,
-  Volume2,
   Headphones,
   Sparkles,
-  Layers,
-  Radio,
   ChevronRight,
   Plus,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { AudioNodeType } from '../../types/audio';
+import { useAudioGraphStore } from '../../store/useAudioGraphStore';
 
 interface ContextMenuProps {
   x: number;
   y: number;
   onClose: () => void;
-  onSelect: (type: AudioNodeType, presetName: string, subType?: string) => void;
+  onSelect: (type: AudioNodeType, presetName: string, subType?: string, defaultDeviceId?: number) => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onSelect }) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const availableInputs = useAudioGraphStore((s) => s.availableInputs);
+  const availableOutputs = useAudioGraphStore((s) => s.availableOutputs);
 
-  // Close when clicking outside
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -62,75 +62,37 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onSelec
             <ChevronRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-white" />
           </div>
 
-          {/* Submenu */}
-          <div className="hidden group-hover:block absolute left-full top-0 ml-1 min-w-52 bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-xl shadow-2xl p-1.5 space-y-0.5">
-            <button
-              onClick={() => onSelect('input', 'マイク入力', 'mic')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white flex items-center gap-2"
-            >
-              <Mic className="w-3.5 h-3.5 text-blue-400" />
-              <span>マイク (内蔵/USBマイク)</span>
-            </button>
-            <button
-              onClick={() => onSelect('input', 'アプリ音声 (BlackHole In)', 'blackhole-in')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white flex items-center gap-2"
-            >
-              <Radio className="w-3.5 h-3.5 text-emerald-400" />
-              <span>アプリ音声 (BlackHole In)</span>
-            </button>
-            <button
-              onClick={() => onSelect('input', 'テスト信号ジェネレータ', 'oscillator')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white flex items-center gap-2"
-            >
-              <Volume2 className="w-3.5 h-3.5 text-amber-400" />
-              <span>テスト信号 (440Hz サイン波)</span>
-            </button>
+          {/* Submenu: Mac実機入力デバイス一覧 */}
+          <div className="hidden group-hover:block absolute left-full top-0 ml-1 min-w-64 max-h-80 overflow-y-auto bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-xl shadow-2xl p-1.5 space-y-0.5">
+            <div className="px-2 py-1 text-[9px] text-zinc-400 font-mono border-b border-zinc-800">
+              Mac上の入力装置を選択:
+            </div>
+            {availableInputs
+              .filter((d) => d.id !== 0)
+              .map((dev) => (
+                <button
+                  key={dev.id}
+                  onClick={() => onSelect('input', dev.name, 'mic', dev.id)}
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white flex items-center gap-2 truncate"
+                >
+                  <Mic className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span className="truncate">{dev.name}</span>
+                </button>
+              ))}
           </div>
         </div>
 
-        {/* 2. VIRTUAL BUS NODES */}
+        {/* 2. VIRTUAL BYPASS BUS NODES */}
         <div className="group relative">
-          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors">
+          <button
+            onClick={() => onSelect('bus', 'バイパスライン')}
+            className="w-full text-left flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white cursor-pointer transition-colors"
+          >
             <span className="flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5 text-indigo-400 group-hover:text-white" />
-              <span>仮想バスノード (Bus)</span>
+              <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-400" />
+              <span>バイパス中継ライン (Bypass Bus)</span>
             </span>
-            <ChevronRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-white" />
-          </div>
-
-          {/* Submenu */}
-          <div className="hidden group-hover:block absolute left-full top-0 ml-1 min-w-56 bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-xl shadow-2xl p-1.5 space-y-0.5">
-            <button
-              onClick={() => onSelect('bus', 'BlackHole 16ch バイパスバス')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white flex items-center gap-2"
-            >
-              <Layers className="w-3.5 h-3.5 text-emerald-400" />
-              <div>
-                <div className="font-medium">BlackHole 16ch バス</div>
-                <div className="text-[10px] text-zinc-400">CoreAudio他アプリ連携</div>
-              </div>
-            </button>
-            <button
-              onClick={() => onSelect('bus', 'BlackHole 2ch バイパスバス')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white flex items-center gap-2"
-            >
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              <div>
-                <div className="font-medium">BlackHole 2ch バス</div>
-                <div className="text-[10px] text-zinc-400">ステレオメインバイパス</div>
-              </div>
-            </button>
-            <button
-              onClick={() => onSelect('bus', '内部仮想バス')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white flex items-center gap-2"
-            >
-              <Layers className="w-3.5 h-3.5 text-purple-400" />
-              <div>
-                <div className="font-medium">内部ソフトウェアバス</div>
-                <div className="text-[10px] text-zinc-400">アプリ内サブミックス</div>
-              </div>
-            </button>
-          </div>
+          </button>
         </div>
 
         {/* 3. OUTPUT NODES */}
@@ -143,22 +105,23 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onSelec
             <ChevronRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-white" />
           </div>
 
-          {/* Submenu */}
-          <div className="hidden group-hover:block absolute left-full top-0 ml-1 min-w-56 bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-xl shadow-2xl p-1.5 space-y-0.5">
-            <button
-              onClick={() => onSelect('output', 'モニター (スピーカー/ヘッドフォン)', 'speaker')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-amber-600 hover:text-white flex items-center gap-2"
-            >
-              <Headphones className="w-3.5 h-3.5 text-amber-400" />
-              <span>スピーカー / ヘッドフォン</span>
-            </button>
-            <button
-              onClick={() => onSelect('output', 'OBS配信用 (BlackHole Out)', 'blackhole-out')}
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-amber-600 hover:text-white flex items-center gap-2"
-            >
-              <Radio className="w-3.5 h-3.5 text-emerald-400" />
-              <span>OBS配信送り (BlackHole Out)</span>
-            </button>
+          {/* Submenu: Mac実機出力デバイス一覧 */}
+          <div className="hidden group-hover:block absolute left-full top-0 ml-1 min-w-64 max-h-80 overflow-y-auto bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-xl shadow-2xl p-1.5 space-y-0.5">
+            <div className="px-2 py-1 text-[9px] text-zinc-400 font-mono border-b border-zinc-800">
+              Mac上の出力先を選択:
+            </div>
+            {availableOutputs
+              .filter((d) => d.id !== 0)
+              .map((dev) => (
+                <button
+                  key={dev.id}
+                  onClick={() => onSelect('output', dev.name, 'speaker', dev.id)}
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-amber-600 hover:text-white flex items-center gap-2 truncate"
+                >
+                  <Headphones className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="truncate">{dev.name}</span>
+                </button>
+              ))}
           </div>
         </div>
 

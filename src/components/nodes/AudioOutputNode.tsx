@@ -10,25 +10,14 @@ interface AudioOutputNodeProps {
   data: AudioNodeData;
 }
 
-const OUTPUT_DEVICE_OPTIONS = [
-  { label: 'MacBook Pro スピーカー (内蔵)', value: 'builtin-speaker', icon: '🔊' },
-  { label: 'USB Audio CODEC (Burr-Brown/TI)', value: 'usb-codec-out', icon: '🔌' },
-  { label: 'BenQ GW2270 (HDMI)', value: 'benq-hdmi', icon: '🖥️' },
-  { label: 'DELL E2214H (HDMI)', value: 'dell-hdmi', icon: '🖥️' },
-  { label: 'BlackHole 2ch (仮想出力)', value: 'bh2ch-out', icon: '⬛' },
-  { label: 'BlackHole 16ch (仮想出力 16ch)', value: 'bh16ch-out', icon: '⬛' },
-  { label: 'NDI Audio (NewTek)', value: 'ndi-out', icon: '📡' },
-  { label: 'Camo Microphone out (Reincubate)', value: 'camo-out', icon: '📱' },
-  { label: '複数出力装置 (Multi-Output)', value: 'multi-out', icon: '📢' },
-];
-
 export const AudioOutputNode: React.FC<AudioOutputNodeProps> = ({ data }) => {
   const updateGain = useAudioGraphStore((s) => s.updateNodeGain);
   const toggleMute = useAudioGraphStore((s) => s.toggleNodeMute);
-  const updateNodeChannel = useAudioGraphStore((s) => s.updateNodeChannel);
+  const updateNodeDevice = useAudioGraphStore((s) => s.updateNodeDevice);
+  const availableOutputs = useAudioGraphStore((s) => s.availableOutputs);
 
-  const selectedDevice = data.virtualChannel || OUTPUT_DEVICE_OPTIONS[0].value;
-  const isBlackHole = selectedDevice.startsWith('bh');
+  const currentDevId = data.deviceId || 0;
+  const isBlackHole = availableOutputs.find((d) => d.id === currentDevId)?.name.includes('BlackHole') ?? false;
 
   return (
     <div className="w-72 bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl overflow-hidden hover:border-amber-500/80 transition-all duration-200">
@@ -42,7 +31,7 @@ export const AudioOutputNode: React.FC<AudioOutputNodeProps> = ({ data }) => {
 
       {/* Node Header */}
       <div className="bg-gradient-to-r from-amber-950/60 to-zinc-900 px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {isBlackHole ? (
             <Radio className="w-4 h-4 text-emerald-400 shrink-0" />
           ) : (
@@ -58,35 +47,45 @@ export const AudioOutputNode: React.FC<AudioOutputNodeProps> = ({ data }) => {
       </div>
 
       {/* Node Body */}
-      <div className="p-3 space-y-2.5 nodrag">
-        {/* Device Selector */}
+      <div className="p-3.5 space-y-3 nodrag">
+        {/* Device Selector (LadioCast Style) */}
         <div className="space-y-1">
-          <div className="text-[10px] text-zinc-400 font-mono">🔌 OUTPUT DEVICE / DESTINATION:</div>
+          <div className="text-[10px] text-zinc-400 font-mono flex items-center justify-between">
+            <span>OUTPUT DEVICE (出力装置):</span>
+            {currentDevId !== 0 && (
+              <span className="text-amber-400 text-[9px]">● 出力中</span>
+            )}
+          </div>
           <select
-            value={selectedDevice}
-            onChange={(e) => updateNodeChannel(data.id, e.target.value)}
-            className="nodrag nopan w-full bg-zinc-950 border border-zinc-750 text-[10px] text-zinc-200 rounded px-1.5 py-1.5 focus:outline-none focus:border-amber-500"
+            value={currentDevId}
+            onChange={(e) => updateNodeDevice(data.id, parseInt(e.target.value))}
+            className="nodrag nopan w-full bg-zinc-950 border border-zinc-750 text-[11px] text-zinc-200 rounded px-2 py-1.5 focus:outline-none focus:border-amber-500"
           >
-            {OUTPUT_DEVICE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.icon} {opt.label}
-              </option>
-            ))}
+            <option value={0}>-- 未選択 (OFF) --</option>
+            {availableOutputs
+              .filter((d) => d.id !== 0)
+              .map((dev) => (
+                <option key={dev.id} value={dev.id}>
+                  {dev.name.includes('BlackHole') ? '⬛ ' : '🔊 '}
+                  {dev.name}
+                </option>
+              ))}
           </select>
         </div>
 
-        <div className="flex items-center gap-2.5 pt-1">
+        <div className="flex items-center gap-3 pt-1">
           <VUMeter peakL={data.peakL} peakR={data.peakR} height={60} />
           <div className="flex-1 space-y-2">
             <FaderSlider
               value={data.gain}
-              disabled={data.mute}
+              disabled={data.mute || currentDevId === 0}
               onChange={(val) => updateGain(data.id, val)}
             />
-            <div className="flex gap-1.5 pt-0.5 nodrag">
+            <div className="flex gap-1.5 pt-1 nodrag">
               <button
                 onClick={() => toggleMute(data.id)}
-                className={`nodrag nopan w-full py-1 rounded text-[10px] font-bold tracking-wider uppercase transition-all ${
+                disabled={currentDevId === 0}
+                className={`nodrag nopan w-full py-1 rounded text-[10px] font-bold tracking-wider uppercase transition-all disabled:opacity-40 ${
                   data.mute
                     ? 'bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)]'
                     : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'

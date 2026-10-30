@@ -6,7 +6,8 @@ export interface AudioNodeData {
   type: AudioNodeType;
   busNumber?: number; // 1 ~ 10 for bus nodes
   subType?: 'mic' | 'oscillator' | 'blackhole-in' | 'speaker' | 'blackhole-out' | 'eq';
-  virtualChannel?: string; // e.g. "BlackHole 16ch (Ch 1-2)"
+  deviceId?: number;  // macOS Core Audio Device ID (0 = N/A)
+  virtualChannel?: string;
   gain: number;       // 0.0 ~ 2.0 (1.0 = 0dB)
   mute: boolean;
   solo: boolean;

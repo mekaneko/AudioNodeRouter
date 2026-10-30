@@ -16,7 +16,7 @@ import { AudioOutputNode } from './components/nodes/AudioOutputNode';
 import { EffectNode } from './components/nodes/EffectNode';
 import { Toolbar } from './components/ui/Toolbar';
 import { ContextMenu } from './components/ui/ContextMenu';
-import { Info, MousePointerClick, Zap } from 'lucide-react';
+import { Zap, Radio } from 'lucide-react';
 import { AudioNodeType } from './types/audio';
 
 const FlowCanvas: React.FC = () => {
@@ -25,9 +25,7 @@ const FlowCanvas: React.FC = () => {
   const onNodesChange = useAudioGraphStore((s) => s.onNodesChange);
   const onEdgesChange = useAudioGraphStore((s) => s.onEdgesChange);
   const onConnect = useAudioGraphStore((s) => s.onConnect);
-  const updateMeters = useAudioGraphStore((s) => s.updateMeters);
-  const startEngine = useAudioGraphStore((s) => s.startEngine);
-  const isEngineStarted = useAudioGraphStore((s) => s.isEngineStarted);
+  const initNativeBridge = useAudioGraphStore((s) => s.initNativeBridge);
   const addNodeAtPosition = useAudioGraphStore((s) => s.addNodeAtPosition);
 
   const { screenToFlowPosition } = useReactFlow();
@@ -46,31 +44,10 @@ const FlowCanvas: React.FC = () => {
     []
   );
 
-  // ★ 起動時に自動でオーディオエンジンを起動（ボタン不要で同通）
+  // ★ 起動時に CoreAudio AUHAL ネイティブブリッジを初期化
   useEffect(() => {
-    startEngine();
-
-    // 最初のユーザー操作（クリック）でも自動でオーディオコンテキストを完全有効化
-    const unlockAudio = () => {
-      startEngine();
-      window.removeEventListener('click', unlockAudio);
-    };
-    window.addEventListener('click', unlockAudio);
-    return () => window.removeEventListener('click', unlockAudio);
-  }, [startEngine]);
-
-  // Real-time VU Meter Animation Loop
-  useEffect(() => {
-    let animId: number;
-    const tick = () => {
-      if (isEngineStarted) {
-        updateMeters();
-      }
-      animId = requestAnimationFrame(tick);
-    };
-    animId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animId);
-  }, [isEngineStarted, updateMeters]);
+    initNativeBridge();
+  }, [initNativeBridge]);
 
   // ★ キャンバス右クリックでメニューを開く
   const handlePaneContextMenu = useCallback(
@@ -92,9 +69,9 @@ const FlowCanvas: React.FC = () => {
   );
 
   const handleSelectNode = useCallback(
-    (type: AudioNodeType, presetName: string, subType?: string) => {
+    (type: AudioNodeType, presetName: string, subType?: string, defaultDeviceId?: number) => {
       if (menuPos) {
-        addNodeAtPosition(type, { x: menuPos.flowX, y: menuPos.flowY }, presetName, subType);
+        addNodeAtPosition(type, { x: menuPos.flowX, y: menuPos.flowY }, presetName, subType, defaultDeviceId);
         setMenuPos(null);
       }
     },
@@ -138,19 +115,21 @@ const FlowCanvas: React.FC = () => {
           <div className="bg-zinc-900/90 backdrop-blur border border-zinc-800/80 rounded-lg p-3 text-xs text-zinc-400 space-y-1.5 shadow-xl max-w-sm">
             <div className="flex items-center gap-1.5 text-zinc-200 font-semibold">
               <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>自動同通 & 右クリック対応マトリクス</span>
+              <span>CoreAudio AUHAL 実機パススルー稼働中</span>
             </div>
             <ul className="list-disc list-inside space-y-0.5 text-[11px] leading-relaxed">
               <li>
-                <strong className="text-emerald-400">繋ぐだけで即同通</strong>: 線（緑ピン→青ピン）を繋いだ瞬間に自動で音声が通ります（実行ボタン不要）。
+                <strong className="text-emerald-400">LadioCast互換</strong>: 各入力ノードで個別にマイクやBlackHoleを選べます（片方オンで両方オンになる問題は解消）。
               </li>
               <li>
-                <strong className="text-blue-400">右クリック</strong>: キャンバス上の好きな場所で右クリックすると、入力・バス・出力ノードを追加できます。
+                <strong className="text-blue-400">繋いだら即・同通</strong>: 線（緑ピン→青ピン）を繋ぐとCoreAudioが直結され、即座に音が流れます。
               </li>
               <li>
-                <strong className="text-amber-400">音量スライダー</strong>: クリックしながらドラッグで滑らかに調整可能（ダブルクリックで0dBリセット）。
+                <strong className="text-purple-400">右クリック</strong>: 画面上で右クリックすると、Macの入出力装置を選んで即座にノード追加可能。
               </li>
-              <li>上部ヘッダーをドラッグするとアプリウィンドウを自由に移動できます。</li>
+              <li>
+                <strong className="text-amber-400">音量スライダー</strong>: クリックしながらドラッグで個別ゲイン調整（ダブルクリックで0dBリセット）。
+              </li>
             </ul>
           </div>
         </Panel>
