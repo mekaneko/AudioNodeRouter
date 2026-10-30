@@ -6,8 +6,8 @@ import {
   RotateCcw,
   Activity,
   Layers,
-  Sparkles,
   MousePointerClick,
+  GripHorizontal,
 } from 'lucide-react';
 import { useAudioGraphStore } from '../../store/useAudioGraphStore';
 
@@ -22,9 +22,22 @@ export const Toolbar: React.FC = () => {
 
   const busCount = nodes.filter((n) => n.data.type === 'bus').length;
 
+  // ネイティブウィンドウドラッグのトリガー
+  const handleStartWindowDrag = (e: React.MouseEvent) => {
+    // ボタンやセレクタ以外の空き領域をクリックした場合
+    if ((e.target as HTMLElement).closest('.window-no-drag')) return;
+    try {
+      (window as any).webkit?.messageHandlers?.windowDrag?.postMessage({});
+    } catch (_) {}
+  };
+
   return (
-    <header className="window-drag-region h-14 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 px-4 flex items-center justify-between z-20 select-none">
-      {/* Brand & Window Drag Area */}
+    <header
+      onMouseDown={handleStartWindowDrag}
+      className="h-14 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 px-4 flex items-center justify-between z-20 select-none cursor-grab active:cursor-grabbing"
+      title="ここをドラッグしてウィンドウを移動できます"
+    >
+      {/* Brand & Status */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-md shadow-blue-500/20">
@@ -37,8 +50,9 @@ export const Toolbar: React.FC = () => {
                 ● LIVE 同通
               </span>
             </h1>
-            <p className="text-[10px] text-zinc-400">
-              macOS CoreAudio / BlackHole 16ch & 2ch Node Matrix
+            <p className="text-[10px] text-zinc-400 flex items-center gap-1">
+              <GripHorizontal className="w-3 h-3 text-zinc-500" />
+              <span>ヘッダーまたはタイトルバーをドラッグしてウィンドウ移動</span>
             </p>
           </div>
         </div>
@@ -64,12 +78,12 @@ export const Toolbar: React.FC = () => {
         {/* Right Click Guide Badge */}
         <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] text-zinc-400 font-mono">
           <MousePointerClick className="w-3.5 h-3.5 text-blue-400" />
-          <span>画面の右クリックで入出力ノードをどこでも追加可能</span>
+          <span>画面右クリックで入出力ノード追加</span>
         </div>
       </div>
 
-      {/* Action Buttons (window-no-drag is essential for clicking) */}
-      <div className="window-no-drag flex items-center gap-2">
+      {/* Action Buttons */}
+      <div className="window-no-drag flex items-center gap-2 cursor-default">
         <button
           onClick={() => toggleMic()}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${

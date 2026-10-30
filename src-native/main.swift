@@ -68,14 +68,8 @@ class LocalAppSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
 
-class CustomWindow: NSWindow {
-    // Allows dragging the window anywhere on empty areas
-    override var canBecomeKey: Bool { return true }
-    override var canBecomeMain: Bool { return true }
-}
-
-class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate {
-    var window: CustomWindow!
+class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+    var window: NSWindow!
     var webView: WKWebView!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -88,7 +82,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
             webAssetsDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dist")
         }
 
+        let contentController = WKUserContentController()
+        contentController.add(self, name: "windowDrag")
+
         let config = WKWebViewConfiguration()
+        config.userContentController = contentController
         config.setURLSchemeHandler(LocalAppSchemeHandler(resourcesURL: webAssetsDir), forURLScheme: "app")
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
@@ -103,21 +101,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
             height: windowHeight
         )
 
-        window = CustomWindow(
+        // ★ 標準のタイトルバーを確実に持たせることで、上部をドラッグして確実にウィンドウを移動できるようにする
+        window = NSWindow(
             contentRect: rect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
 
-        window.title = "AudioNodeRouter"
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true  // ★ 背景ドラッグでウィンドウ全体を移動可能にする
+        window.title = "AudioNodeRouter - macOS Audio Node Mixer"
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
+        window.center()
 
-        webView = WKWebView(frame: rect, configuration: config)
+        webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
+        webView.autoresizingMask = [.width, .height]
         webView.uiDelegate = self
         webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
@@ -130,6 +128,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDe
         }
 
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // ドラッグメッセージを受け取ってウィンドウ移動を開始する
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "windowDrag" {
+            if let currentEvent = NSApp.currentEvent {
+                window.performDrag(with: currentEvent)
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
