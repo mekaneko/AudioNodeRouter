@@ -1,0 +1,18 @@
+[package]
+name = "audio-node-router"
+version = "0.1.0"
+description = "macOS Node-Based 10-Channel Virtual Audio Router"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+cpal = "0.15"            # Cross-platform Audio I/O (macOS CoreAudio backend)
+ringbuf = "0.3"         # High-performance lock-free ring buffer for real-time DSP
+petgraph = "0.6"        # Directed Acyclic Graph (DAG) for node evaluation
+parking_lot = "0.12"
+log = "0.4"
